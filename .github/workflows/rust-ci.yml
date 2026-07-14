@@ -233,8 +233,8 @@ jobs:
       contents: read
     if: ${{ inputs.run-pre-commit }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - uses: pre-commit/action@v3.0.1
@@ -249,7 +249,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-lint }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -276,7 +276,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-build }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -295,7 +295,7 @@ jobs:
     timeout-minutes: 5
     if: ${{ inputs.run-no-std }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -316,7 +316,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-unit-tests }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -345,7 +345,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-property-tests }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -367,7 +367,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-fuzz-tests }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.nightly-toolchain }}
@@ -376,7 +376,7 @@ jobs:
           workspaces: fuzz
       # No prebuilt binaries upstream, so build once and cache the binary.
       - name: Install cargo-fuzz
-        uses: taiki-e/cache-cargo-install-action@v2
+        uses: taiki-e/cache-cargo-install-action@v3
         with:
           tool: cargo-fuzz
       - name: Build fuzz targets
@@ -432,7 +432,7 @@ jobs:
               || (github.event_name == 'push'
                   && (github.ref_type == 'tag' || github.ref_name == inputs.default-branch))) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.nightly-toolchain }}
@@ -454,7 +454,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-msrv }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.msrv }}
@@ -473,7 +473,7 @@ jobs:
     # Only meaningful on PRs (catch breaks before merge) and release tags (final gate)
     if: ${{ inputs.run-semver-checks && (github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: obi1kenobi/cargo-semver-checks-action@v2
@@ -490,7 +490,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-security }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -513,7 +513,7 @@ jobs:
       contents: read
     if: ${{ inputs.run-docs }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -543,7 +543,7 @@ jobs:
     # release job on tag pushes; this job never needs a registry token.
     if: ${{ inputs.run-publish-dry-run && github.event_name == 'pull_request' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -592,7 +592,7 @@ jobs:
       }}
     environment: ${{ inputs.publish-environment }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -608,7 +608,7 @@ jobs:
             cargo publish
           fi
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: ${{ inputs.generate-release-notes }}
 
@@ -652,7 +652,7 @@ jobs:
       }}
     environment: ${{ inputs.publish-environment }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.release-plz-token || github.token }}
@@ -685,7 +685,7 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.release-plz-token || github.token }}
