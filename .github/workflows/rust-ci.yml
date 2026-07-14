@@ -8,7 +8,8 @@
 # Set `use-release-plz: true` to hand versioning, changelogs, tags, and
 # publishing to release-plz instead of the tag-gated release job.
 #
-# Runner (ubuntu-latest) and the concurrency policy are intentionally fixed.
+# The runner (ubuntu-latest) is intentionally fixed; concurrency policy is
+# owned by the caller.
 name: Rust CI (reusable)
 
 on:
@@ -59,6 +60,10 @@ on:
         description: 'Run cargo-audit + cargo-deny'
         type: boolean
         default: true
+      use-audit-check:
+        description: 'Publish cargo-audit results as a GitHub check run via rustsec/audit-check (replaces the plain cargo-audit step; the caller must grant checks: write)'
+        type: boolean
+        default: false
       run-docs:
         description: 'Build rustdoc with warnings denied'
         type: boolean
@@ -78,7 +83,7 @@ on:
 
       # --- Run policy ------------------------------------------------------
       comprehensive-tests:
-        description: 'Force the comprehensive test path (longer fuzz, enables miri). Auto-enabled on schedule, default-branch push, and tag push.'
+        description: 'Force the comprehensive test path (longer fuzz, enables miri). Auto-enabled on schedule, merge_group, default-branch push, and tag push.'
         type: boolean
         default: false
       default-branch:
@@ -96,9 +101,9 @@ on:
         type: string
         default: 'nightly'
       msrv:
-        description: 'Minimum supported Rust version'
+        description: 'Minimum supported Rust version (empty = read rust-version from Cargo.toml)'
         type: string
-        default: '1.85.0'
+        default: ''
       # The no_std build is a canary, not a deployment target: only a *-none
       # target (no std available at all) proves nothing in the dependency
       # graph sneaks std back in. The thumbv6m default is the strictest common
@@ -206,6 +211,12 @@ on:
       release-plz-token:
         description: 'Token release-plz uses for the release PR and GitHub releases. Falls back to github.token; pass a PAT or GitHub App token so release PRs trigger CI.'
         required: false
+      release-plz-app-id:
+        description: 'GitHub App ID for minting a short-lived release-plz token in-job. Preferred over release-plz-token; requires release-plz-app-private-key.'
+        required: false
+      release-plz-app-private-key:
+        description: 'Private key of the release-plz GitHub App'
+        required: false
 
 # No workflow-level permissions block: a called workflow's permission requests
 # must be a subset of the caller's grant and are validated even for jobs that
@@ -218,9 +229,11 @@ env:
   RUST_BACKTRACE: 1
   CARGO_INCREMENTAL: 0
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+# No concurrency block: in a called workflow it is evaluated in the caller's
+# run context, so it would compute the same group as a caller using the
+# conventional `<workflow>-<head_ref>` pattern and GitHub cancels the run as a
+# parent/child deadlock. Callers own the concurrency policy (see
+# examples/ci.yml).
 
 jobs:
   # ===============================================================================================
@@ -234,10 +247,22 @@ jobs:
     if: ${{ inputs.run-pre-commit }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        id: python
         with:
           python-version: '3.12'
-      - uses: pre-commit/action@v3.0.1
+      # Inlined replacement for pre-commit/action, which is in maintenance
+      # mode and pins an actions/cache version with a deprecated Node runtime.
+      - name: Install pre-commit
+        run: python -m pip install pre-commit
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run pre-commit
+        run: pre-commit run --show-diff-on-failure --color=always --all-files
 
   # ===============================================================================================
   # Linting and Formatting
@@ -248,8 +273,16 @@ jobs:
     permissions:
       contents: read
     if: ${{ inputs.run-lint }}
+    # Caller inputs are passed through env so they expand as data in the
+    # shell, never as script text (zizmor: template-injection).
+    env:
+      FEATURE_FLAGS: ${{ inputs.feature-flags }}
+      CLIPPY_ARGS: ${{ inputs.clippy-args }}
+      ALLOC_FEATURE: ${{ inputs.alloc-feature }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -258,13 +291,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
-        run: cargo clippy --all-targets ${{ inputs.feature-flags }} -- ${{ inputs.clippy-args }}
+        run: cargo clippy --all-targets $FEATURE_FLAGS -- $CLIPPY_ARGS
       - name: Run clippy (no_std + no_alloc)
         if: ${{ inputs.run-no-std }}
-        run: cargo clippy --no-default-features -- ${{ inputs.clippy-args }}
+        run: cargo clippy --no-default-features -- $CLIPPY_ARGS
       - name: Run clippy (no_std + alloc)
         if: ${{ inputs.run-no-std }}
-        run: cargo clippy --no-default-features --features ${{ inputs.alloc-feature }} -- ${{ inputs.clippy-args }}
+        run: cargo clippy --no-default-features --features "$ALLOC_FEATURE" -- $CLIPPY_ARGS
 
   # ===============================================================================================
   # Build
@@ -275,14 +308,18 @@ jobs:
     permissions:
       contents: read
     if: ${{ inputs.run-build }}
+    env:
+      FEATURE_FLAGS: ${{ inputs.feature-flags }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
       - uses: Swatinem/rust-cache@v2
       - name: Build release
-        run: cargo build --release ${{ inputs.feature-flags }}
+        run: cargo build --release $FEATURE_FLAGS
 
   # ===============================================================================================
   # Bare-metal no_std Build
@@ -294,17 +331,22 @@ jobs:
       contents: read
     timeout-minutes: 5
     if: ${{ inputs.run-no-std }}
+    env:
+      NO_STD_TARGET: ${{ inputs.no-std-target }}
+      ALLOC_FEATURE: ${{ inputs.alloc-feature }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
           targets: ${{ inputs.no-std-target }}
       - uses: Swatinem/rust-cache@v2
       - name: Build no_std + no_alloc
-        run: cargo build --no-default-features --target ${{ inputs.no-std-target }}
+        run: cargo build --no-default-features --target "$NO_STD_TARGET"
       - name: Build no_std + alloc
-        run: cargo build --no-default-features --features ${{ inputs.alloc-feature }} --target ${{ inputs.no-std-target }}
+        run: cargo build --no-default-features --features "$ALLOC_FEATURE" --target "$NO_STD_TARGET"
 
   # ===============================================================================================
   # Unit Tests
@@ -315,8 +357,13 @@ jobs:
     permissions:
       contents: read
     if: ${{ inputs.run-unit-tests }}
+    env:
+      FEATURE_FLAGS: ${{ inputs.feature-flags }}
+      UNIT_TEST_FILTER: ${{ inputs.unit-test-filter }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -326,7 +373,7 @@ jobs:
         with:
           tool: cargo-nextest,cargo-llvm-cov
       - name: Run tests with coverage
-        run: cargo llvm-cov nextest ${{ inputs.feature-flags }} --all-targets -E '${{ inputs.unit-test-filter }}' --lcov --output-path lcov.info
+        run: cargo llvm-cov nextest $FEATURE_FLAGS --all-targets -E "$UNIT_TEST_FILTER" --lcov --output-path lcov.info
       - name: Upload coverage
         if: ${{ inputs.upload-coverage }}
         uses: actions/upload-artifact@v7
@@ -344,8 +391,14 @@ jobs:
     permissions:
       contents: read
     if: ${{ inputs.run-property-tests }}
+    env:
+      FEATURE_FLAGS: ${{ inputs.feature-flags }}
+      PROPERTY_TEST_FILTER: ${{ inputs.property-test-filter }}
+      PROPERTY_TEST_THREADS: ${{ inputs.property-test-threads }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -355,7 +408,7 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Run property tests
-        run: cargo nextest run ${{ inputs.feature-flags }} --lib -E '${{ inputs.property-test-filter }}' --test-threads=${{ inputs.property-test-threads }}
+        run: cargo nextest run $FEATURE_FLAGS --lib -E "$PROPERTY_TEST_FILTER" --test-threads="$PROPERTY_TEST_THREADS"
 
   # ===============================================================================================
   # Fuzz Tests
@@ -368,6 +421,8 @@ jobs:
     if: ${{ inputs.run-fuzz-tests }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.nightly-toolchain }}
@@ -384,10 +439,12 @@ jobs:
       - name: Run fuzz targets
         shell: bash
         env:
-          # Comprehensive on schedule, tag push, default-branch push, or explicit opt-in.
+          # Comprehensive on schedule, merge queue, tag push, default-branch
+          # push, or explicit opt-in.
           COMPREHENSIVE: >-
             ${{ inputs.comprehensive-tests
                 || github.event_name == 'schedule'
+                || github.event_name == 'merge_group'
                 || (github.event_name == 'push'
                     && (github.ref_type == 'tag' || github.ref_name == inputs.default-branch)) }}
           FUZZ_TARGETS: ${{ inputs.fuzz-targets }}
@@ -424,15 +481,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # Comprehensive runs only: schedule, tag push, default-branch push, or explicit opt-in.
+    # Comprehensive runs only: schedule, merge queue, tag push, default-branch
+    # push, or explicit opt-in.
     if: >-
       ${{ inputs.run-miri-tests
           && (inputs.comprehensive-tests
               || github.event_name == 'schedule'
+              || github.event_name == 'merge_group'
               || (github.event_name == 'push'
                   && (github.ref_type == 'tag' || github.ref_name == inputs.default-branch))) }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.nightly-toolchain }}
@@ -442,7 +503,8 @@ jobs:
         env:
           PROPTEST_DISABLE_FAILURE_PERSISTENCE: "1"
           MIRIFLAGS: "-Zmiri-env-forward=PROPTEST_DISABLE_FAILURE_PERSISTENCE"
-        run: cargo miri test ${{ inputs.miri-args }}
+          MIRI_ARGS: ${{ inputs.miri-args }}
+        run: cargo miri test $MIRI_ARGS
 
   # ===============================================================================================
   # MSRV Check
@@ -453,14 +515,37 @@ jobs:
     permissions:
       contents: read
     if: ${{ inputs.run-msrv }}
+    env:
+      FEATURE_FLAGS: ${{ inputs.feature-flags }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      # Single-source the MSRV from Cargo.toml's rust-version unless the
+      # caller overrides it, so the workflow cannot drift from what the
+      # manifest promises.
+      - name: Resolve MSRV
+        id: msrv
+        shell: bash
+        env:
+          MSRV_INPUT: ${{ inputs.msrv }}
+        run: |
+          msrv="$MSRV_INPUT"
+          if [[ -z "$msrv" ]]; then
+            msrv=$(sed -n 's/^rust-version *= *"\(.*\)".*/\1/p' Cargo.toml | head -n1)
+          fi
+          if [[ -z "$msrv" ]]; then
+            echo "No msrv input and no rust-version in Cargo.toml" >&2
+            exit 1
+          fi
+          echo "msrv=$msrv" >> "$GITHUB_OUTPUT"
+          echo "MSRV: $msrv"
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
-          toolchain: ${{ inputs.msrv }}
+          toolchain: ${{ steps.msrv.outputs.msrv }}
       - uses: Swatinem/rust-cache@v2
       - name: Build with MSRV
-        run: cargo build ${{ inputs.feature-flags }}
+        run: cargo build $FEATURE_FLAGS
 
   # ===============================================================================================
   # Semver Checks
@@ -476,6 +561,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           package: ${{ inputs.package }}
@@ -491,6 +577,8 @@ jobs:
     if: ${{ inputs.run-security }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -499,9 +587,29 @@ jobs:
         with:
           tool: cargo-audit,cargo-deny
       - name: Run cargo audit
+        # Skipped when the audit-check job publishes the same audit as a check run.
+        if: ${{ !inputs.use-audit-check }}
         run: cargo audit --file Cargo.lock
       - name: Run cargo deny
         run: cargo deny check
+
+  # Publishes audit findings as a GitHub check run with inline annotations.
+  # Opt-in: static caller validation forbids nested permission requests, so
+  # this job declares none and inherits the caller's grant. There is no way to
+  # detect the caller's grant statically; enabling `use-audit-check` without
+  # granting `checks: write` on the caller job fails at runtime in this job.
+  audit-check:
+    name: Security Audit Check
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run-security && inputs.use-audit-check }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Run cargo audit (check run)
+        uses: rustsec/audit-check@v2.0.0
+        with:
+          token: ${{ github.token }}
 
   # ===============================================================================================
   # Documentation
@@ -512,16 +620,23 @@ jobs:
     permissions:
       contents: read
     if: ${{ inputs.run-docs }}
+    env:
+      FEATURE_FLAGS: ${{ inputs.feature-flags }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
       - uses: Swatinem/rust-cache@v2
       - name: Build docs
-        run: cargo doc --no-deps ${{ inputs.feature-flags }}
+        run: cargo doc --no-deps $FEATURE_FLAGS
         env:
           RUSTDOCFLAGS: "-D warnings"
+      # nextest does not run doctests, so doc examples are only exercised here.
+      - name: Run doctests
+        run: cargo test --doc $FEATURE_FLAGS
       - name: Upload docs
         if: ${{ inputs.upload-docs }}
         uses: actions/upload-artifact@v7
@@ -544,6 +659,8 @@ jobs:
     if: ${{ inputs.run-publish-dry-run && github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -560,13 +677,18 @@ jobs:
           fi
 
   # ===============================================================================================
-  # Release & Publish
+  # Aggregate Gate
   # ===============================================================================================
-  release:
-    name: Release & Publish
+  # Single context for branch protection: consumers require "CI OK" instead of
+  # enumerating every job, so a job rename cannot silently drop protection.
+  # Skipped jobs are fine (many are toggle- or event-gated); failures and
+  # cancellations are not. The release jobs gate on this one.
+  ci-ok:
+    name: CI OK
     runs-on: ubuntu-latest
-    # No permissions request: inherits the caller's grant. Creating the GitHub
-    # release requires the caller to grant `contents: write`.
+    permissions:
+      contents: read
+    if: ${{ always() }}
     needs:
       - pre-commit
       - lint
@@ -579,8 +701,29 @@ jobs:
       - msrv
       - semver-checks
       - security
+      - audit-check
       - docs
       - publish-dry-run
+    steps:
+      - name: Verify no job failed
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        shell: bash
+        run: |
+          echo "$RESULTS"
+          if grep -qE 'failure|cancelled' <<<"$RESULTS"; then
+            exit 1
+          fi
+
+  # ===============================================================================================
+  # Release & Publish
+  # ===============================================================================================
+  release:
+    name: Release & Publish
+    runs-on: ubuntu-latest
+    # No permissions request: inherits the caller's grant. Creating the GitHub
+    # release requires the caller to grant `contents: write`.
+    needs: [ci-ok]
     if: >-
       ${{
         !cancelled() && !failure()
@@ -593,6 +736,8 @@ jobs:
     environment: ${{ inputs.publish-environment }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -627,20 +772,7 @@ jobs:
     runs-on: ubuntu-latest
     # No permissions request: inherits the caller's grant. Publishing tags and
     # GitHub releases requires the caller to grant `contents: write`.
-    needs:
-      - pre-commit
-      - lint
-      - build
-      - no-std
-      - unit-tests
-      - property-tests
-      - fuzz-tests
-      - miri-tests
-      - msrv
-      - semver-checks
-      - security
-      - docs
-      - publish-dry-run
+    needs: [ci-ok]
     if: >-
       ${{
         !cancelled() && !failure()
@@ -651,11 +783,25 @@ jobs:
         && (inputs.publish-repository == '' || github.repository == inputs.publish-repository)
       }}
     environment: ${{ inputs.publish-environment }}
+    env:
+      HAS_RELEASE_PLZ_APP: ${{ secrets.release-plz-app-id != '' }}
     steps:
-      - uses: actions/checkout@v6
+      # Prefer a short-lived GitHub App installation token when the caller
+      # provides an App; fall back to release-plz-token, then github.token.
+      - name: Mint release-plz App token
+        id: app-token
+        if: ${{ env.HAS_RELEASE_PLZ_APP == 'true' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.release-plz-app-id }}
+          private-key: ${{ secrets.release-plz-app-private-key }}
+          permission-contents: write
+      # release-plz pushes the release tag with the checked-out credentials,
+      # so this checkout intentionally persists them.
+      - uses: actions/checkout@v6 # zizmor: ignore[artipacked]
         with:
           fetch-depth: 0
-          token: ${{ secrets.release-plz-token || github.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.release-plz-token || github.token }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -664,7 +810,7 @@ jobs:
         with:
           command: release
         env:
-          GITHUB_TOKEN: ${{ secrets.release-plz-token || github.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.release-plz-token || github.token }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.cargo-registry-token }}
 
   release-plz-pr:
@@ -684,11 +830,26 @@ jobs:
     concurrency:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
+    env:
+      HAS_RELEASE_PLZ_APP: ${{ secrets.release-plz-app-id != '' }}
     steps:
-      - uses: actions/checkout@v6
+      # Prefer a short-lived GitHub App installation token when the caller
+      # provides an App; fall back to release-plz-token, then github.token.
+      - name: Mint release-plz App token
+        id: app-token
+        if: ${{ env.HAS_RELEASE_PLZ_APP == 'true' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.release-plz-app-id }}
+          private-key: ${{ secrets.release-plz-app-private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+      # release-plz pushes the release-pr branch with the checked-out
+      # credentials, so this checkout intentionally persists them.
+      - uses: actions/checkout@v6 # zizmor: ignore[artipacked]
         with:
           fetch-depth: 0
-          token: ${{ secrets.release-plz-token || github.token }}
+          token: ${{ steps.app-token.outputs.token || secrets.release-plz-token || github.token }}
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master 2026-07-14
         with:
           toolchain: ${{ inputs.toolchain }}
@@ -697,4 +858,4 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ secrets.release-plz-token || github.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.release-plz-token || github.token }}

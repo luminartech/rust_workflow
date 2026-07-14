@@ -25,6 +25,10 @@ repos:
       - id: actionlint
         # Also lint the example caller workflow, not just .github/workflows/.
         files: ^(\.github/workflows/|examples/).*\.(yml|yaml)$
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.9.0
+    hooks:
+      - id: zizmor
   - repo: https://github.com/crate-ci/typos
     rev: v1.39.1
     hooks:

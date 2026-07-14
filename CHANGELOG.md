@@ -15,8 +15,45 @@ and this project adheres to
   default-branch pushes and merging it publishes, tags, and creates the GitHub
   releases; the tag-gated release job is disabled.
 
+- `ci-ok` aggregate gate job: a single always-run context that fails on any
+  job failure or cancellation, intended as the one required check in branch
+  protection. The release jobs now gate on it.
+
+- Doctest execution in the docs job (`cargo test --doc`); nextest never runs
+  doctests, so doc examples were previously unexercised.
+
+- `use-audit-check` input (default `false`): publish cargo-audit results as a
+  GitHub check run via rustsec/audit-check instead of the plain audit step.
+  Requires the caller to grant `checks: write`; the job inherits the caller's
+  permissions, so leaving it off keeps read-only callers valid.
+
+- `release-plz-app-id` + `release-plz-app-private-key` secrets: the
+  release-plz jobs mint a short-lived, scoped GitHub App installation token,
+  preferred over a `release-plz-token` PAT.
+
+- Merge-queue support: `merge_group` events take the comprehensive test path.
+
+- zizmor (GitHub Actions security linter) added to pre-commit.
+
+### Changed
+
+- The `msrv` input now defaults to empty, which reads `rust-version` from
+  `Cargo.toml` so the workflow cannot drift from the manifest.
+- All checkouts set `persist-credentials: false` except the release-plz jobs,
+  which intentionally keep their minted token for pushing.
+- Caller inputs used in `run:` scripts now pass through `env` so they expand
+  as shell data rather than script text (template-injection hardening).
+- Replaced `pre-commit/action` (maintenance mode, pins an `actions/cache`
+  version on a deprecated Node runtime) with inlined install/cache/run steps,
+  and bumped `actions/setup-python` to v6.
+
 ### Fixed
 
+- Removed the workflow-level `concurrency` block from `rust-ci.yml`: it is
+  evaluated in the caller's run context, computed the same group as a caller
+  using the conventional pattern, and GitHub canceled the run as a
+  parent/child deadlock. Callers now own the concurrency policy (see
+  `examples/ci.yml`).
 - Nested jobs no longer request elevated permissions, which failed caller
   validation ("The nested job 'release' is requesting 'contents: write', but
   is only allowed 'contents: read'") whenever the caller ran with a read-only

@@ -10,6 +10,12 @@
 extern crate alloc;
 
 /// Computes the Fletcher-16 checksum of `data`.
+///
+/// # Examples
+///
+/// ```
+/// assert_eq!(rust_workflow_smoke::fletcher16(b"abcde"), 0xC8F0);
+/// ```
 #[must_use]
 pub fn fletcher16(data: &[u8]) -> u16 {
     let mut sum1: u16 = 0;

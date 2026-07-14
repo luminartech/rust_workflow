@@ -8,6 +8,9 @@ name: CI
 
 on:
   pull_request:
+  # For repos using a merge queue; harmless otherwise. Merge-queue runs take
+  # the comprehensive path (longer fuzz, miri) as the final gate before merge.
+  merge_group:
   push:
     branches: [main]
     tags: ['v*']
@@ -20,6 +23,13 @@ on:
         required: false
         default: false
         type: boolean
+
+# The caller owns the concurrency policy; the reusable workflow defines none
+# of its own (a called workflow's concurrency group would deadlock against
+# this one).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   ci:

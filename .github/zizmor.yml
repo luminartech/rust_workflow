@@ -1,0 +1,10 @@
+# zizmor configuration.
+#
+# Tag pins (e.g. @v2) are accepted deliberately: hash pins were considered
+# and rejected for readability, and dependabot keeps the tags current.
+# zizmor still rejects fully unpinned references (@main or no ref at all).
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        '*': ref-pin
