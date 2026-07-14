@@ -1,0 +1,36 @@
+name: Epic
+description: A large body of work spanning multiple tasks or PRs
+title: "feat(<scope>): <epic title>"
+labels: ["epic"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What is the high-level objective? What problem are we solving?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: In Scope
+      description: List the capabilities or deliverables that are part of this epic.
+    validations:
+      required: true
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of Scope
+      description: Explicitly note what is NOT included to prevent scope creep.
+    validations:
+      required: false
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Child Tasks / Issues
+      description: Link related issues here as they are created.
+      placeholder: |
+        - [ ] #...
+        - [ ] #...
+    validations:
+      required: false

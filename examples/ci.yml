@@ -1,0 +1,33 @@
+# Example caller. Drop this in a consuming repo at `.github/workflows/ci.yml`.
+#
+# The caller owns the triggers (push/pull_request/schedule/dispatch) and passes
+# repo-specific configuration into the reusable workflow. The defaults cover a
+# single public crate end to end, including a publish dry run on every PR and
+# a tag-gated crates.io publish; only override what your repo actually needs.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+    inputs:
+      enable-comprehensive-tests:
+        description: 'Run comprehensive test suites (longer fuzz, miri)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  ci:
+    uses: luminartech/rust_workflow/.github/workflows/rust-ci.yml@v1
+    secrets:
+      cargo-registry-token: ${{ secrets.CARGO_CI_TOKEN }}
+    with:
+      # Restrict publishing to the canonical repo so forks never publish.
+      publish-repository: my-org/my_crate
+      # Wire the manual dispatch toggle through to the comprehensive path.
+      comprehensive-tests: ${{ inputs.enable-comprehensive-tests || false }}

@@ -1,0 +1,42 @@
+default_language_version:
+  python: python3.12
+default_stages: [pre-commit]
+repos:
+  - repo: meta
+    hooks:
+      - id: check-useless-excludes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude_types: [markdown]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        # Also lint the example caller workflow, not just .github/workflows/.
+        files: ^(\.github/workflows/|examples/).*\.(yml|yaml)$
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.39.1
+    hooks:
+      - id: typos
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.29.0
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.22
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - linkify-it-py==1.0.3
+          - mdformat-gfm==0.3.5

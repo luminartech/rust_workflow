@@ -1,0 +1,48 @@
+# CI for this repository itself.
+#
+# rust-ci.yml is workflow_call-only, so this workflow is the repo's own gate:
+# - pre-commit: YAML hygiene, actionlint, typos, gitleaks, markdown formatting
+# - smoke-test: invokes rust-ci.yml against the fixture crate at the repo root
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    name: Pre-commit Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: pre-commit/action@v3.0.1
+
+  # Exercise the reusable workflow end to end against the fixture crate.
+  # Stages that need external state are disabled: fuzzing (no fuzz targets),
+  # semver-checks (no published baseline), security (advisory-database churn
+  # would make the gate flaky), and publish.
+  smoke-test:
+    name: Smoke Test
+    uses: ./.github/workflows/rust-ci.yml
+    with:
+      run-pre-commit: false
+      run-fuzz-tests: false
+      run-miri-tests: false
+      run-semver-checks: false
+      run-security: false
+      # The fixture sets `publish = false`, which cargo publish rejects even
+      # with --dry-run.
+      run-publish-dry-run: false
+      publish-crate: false
+      upload-coverage: false

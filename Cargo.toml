@@ -1,0 +1,18 @@
+# Fixture crate exercised by the smoke-test job in .github/workflows/ci.yml.
+# It gives rust-ci.yml real Rust code to run against; it is never published.
+[package]
+name = "rust_workflow_smoke"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "Fixture crate for smoke-testing the reusable Rust CI workflow"
+publish = false
+
+[features]
+default = ["std"]
+std = ["alloc"]
+alloc = []
+
+[dev-dependencies]
+proptest = "1"
