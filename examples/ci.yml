@@ -24,10 +24,12 @@ on:
 jobs:
   ci:
     uses: luminartech/rust_workflow/.github/workflows/rust-ci.yml@v1
-    # Required when enabling use-release-plz below:
-    # permissions:
-    #   contents: write
-    #   pull-requests: write
+    # Test jobs downscope themselves to read; this grant is only usable by the
+    # release path (GitHub release creation).
+    permissions:
+      contents: write
+      # Additionally required when enabling use-release-plz below:
+      # pull-requests: write
     secrets:
       cargo-registry-token: ${{ secrets.CARGO_CI_TOKEN }}
       # Optional PAT so release-plz's release PRs trigger CI (PRs opened with

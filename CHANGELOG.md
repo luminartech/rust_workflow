@@ -15,6 +15,16 @@ and this project adheres to
   default-branch pushes and merging it publishes, tags, and creates the GitHub
   releases; the tag-gated release job is disabled.
 
+### Fixed
+
+- Nested jobs no longer request elevated permissions, which failed caller
+  validation ("The nested job 'release' is requesting 'contents: write', but
+  is only allowed 'contents: read'") whenever the caller ran with a read-only
+  token, including fork PRs. Test jobs now downscope to `contents: read` and
+  the release / release-plz jobs inherit the caller's grant. Callers that
+  publish must grant `contents: write` on the caller job (release-plz also
+  needs `pull-requests: write`).
+
 ## [1.0.0] - 2026-07-14
 
 ### Added

@@ -30,6 +30,8 @@ on:
 jobs:
   ci:
     uses: luminartech/rust_workflow/.github/workflows/rust-ci.yml@v1
+    permissions:
+      contents: write
     secrets:
       cargo-registry-token: ${{ secrets.CARGO_CI_TOKEN }}
     with:
@@ -39,6 +41,13 @@ jobs:
 Every stage runs by default. Disable the ones you do not need with the
 `run-*` / `publish-crate` toggles, e.g. a pure-`std` crate turns off the
 bare-metal build with `run-no-std: false`.
+
+All test jobs downscope themselves to `contents: read`; only the release path
+uses the caller's broader grant. `contents: write` is needed to create GitHub
+releases (drop it, along with the registry token, if you disable publishing);
+release-plz additionally needs `pull-requests: write`. The reusable workflow
+never requests write scopes itself, so callers running with a read-only token
+(fork PRs, for example) still pass workflow validation.
 
 ## Run policy
 
