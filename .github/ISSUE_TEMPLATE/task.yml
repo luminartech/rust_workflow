@@ -1,0 +1,29 @@
+name: Task
+description: A concrete, bounded piece of work
+title: "chore(<scope>): <short description>"
+labels: ["task"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What needs to be done and why?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How will we know this task is complete?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Links, references, or background info.
+    validations:
+      required: false

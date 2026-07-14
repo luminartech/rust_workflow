@@ -1,0 +1,22 @@
+# Keeps action pins in .github/workflows/ and the smoke-test fixture crate's
+# dependencies fresh. Bumps are grouped so each ecosystem opens at most one PR
+# per week.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns:
+          - '*'
