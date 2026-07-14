@@ -25,7 +25,7 @@ and this project adheres to
   publish must grant `contents: write` on the caller job (release-plz also
   needs `pull-requests: write`).
 
-## [1.0.0] - 2026-07-14
+## [0.1.0] - 2026-07-14
 
 ### Added
 
