@@ -24,10 +24,20 @@ on:
 jobs:
   ci:
     uses: luminartech/rust_workflow/.github/workflows/rust-ci.yml@v1
+    # Required when enabling use-release-plz below:
+    # permissions:
+    #   contents: write
+    #   pull-requests: write
     secrets:
       cargo-registry-token: ${{ secrets.CARGO_CI_TOKEN }}
+      # Optional PAT so release-plz's release PRs trigger CI (PRs opened with
+      # the default github.token do not).
+      # release-plz-token: ${{ secrets.RELEASE_PLZ_TOKEN }}
     with:
       # Restrict publishing to the canonical repo so forks never publish.
       publish-repository: my-org/my_crate
       # Wire the manual dispatch toggle through to the comprehensive path.
       comprehensive-tests: ${{ inputs.enable-comprehensive-tests || false }}
+      # Hand versioning, changelogs, tags, and publishing to release-plz
+      # instead of the tag-gated release job:
+      # use-release-plz: true

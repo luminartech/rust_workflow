@@ -8,6 +8,13 @@ and this project adheres to
 
 ## Unreleased
 
+### Added
+
+- `use-release-plz` input and `release-plz-token` secret: optional release
+  automation via release-plz. When enabled, a release PR is maintained on
+  default-branch pushes and merging it publishes, tags, and creates the GitHub
+  releases; the tag-gated release job is disabled.
+
 ## [1.0.0] - 2026-07-14
 
 ### Added

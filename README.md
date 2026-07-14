@@ -55,6 +55,27 @@ Most stages are gated only by their toggle. Two behaviors are event-driven:
   release job runs only on `v*` tag pushes, subject to `publish-crate` and the
   optional `publish-repository` guard.
 
+## Release automation (release-plz)
+
+Set `use-release-plz: true` to hand versioning, changelogs, tags, and
+publishing to [release-plz](https://github.com/release-plz/release-plz)
+instead of the tag-gated release job (which is disabled while the flag is on).
+On every `default-branch` push, a release PR is created or updated with
+version bumps and changelog entries derived from conventional commits; merging
+it publishes to crates.io, pushes the version tags, and creates the GitHub
+releases. Pushes where everything is already published are a no-op, and the
+publish half only runs after the rest of CI has passed.
+
+Requirements for consumers:
+
+- Grant the caller job `permissions: contents: write, pull-requests: write`.
+- Pass `release-plz-token` (a PAT or GitHub App token) if you want the release
+  PR to trigger CI; PRs opened with the default `github.token` do not.
+- Configure per-repo behavior with a `release-plz.toml` if needed.
+- The publish step still runs in the `publish-environment` environment and
+  honors the `publish-repository` guard; environment protection rules will
+  gate every default-branch release run.
+
 ## Inputs
 
 ### Stage toggles (all boolean, default `true`)
@@ -134,12 +155,14 @@ builds essentially everywhere, embedded or desktop.
 | `publish-environment`    | string  | `crates-io` | GitHub environment gating publish   |
 | `publish-repository`     | string  | `''`        | Restrict publish to this owner/repo |
 | `generate-release-notes` | boolean | `true`      | Auto-generate GitHub release notes  |
+| `use-release-plz`        | boolean | `false`     | Hand releases to release-plz        |
 
 ### Secrets
 
-| Secret                 | Required | Notes                                                   |
-| ---------------------- | -------- | ------------------------------------------------------- |
-| `cargo-registry-token` | no       | Token for `cargo publish` (needed only when publishing) |
+| Secret                 | Required | Notes                                                      |
+| ---------------------- | -------- | ---------------------------------------------------------- |
+| `cargo-registry-token` | no       | Token for `cargo publish` (needed only when publishing)    |
+| `release-plz-token`    | no       | PAT/App token for release-plz (falls back to github.token) |
 
 ## Fixed by design
 
