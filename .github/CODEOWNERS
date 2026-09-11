@@ -1,0 +1,5 @@
+# Default owners for everything in the repo. Review routing only — the
+# main-branch ruleset does not currently require code-owner approval.
+#
+# Changes here execute in every repository that calls this workflow.
+* @luminartech/luv
